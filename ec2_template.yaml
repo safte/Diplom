@@ -1,0 +1,51 @@
+---
+  AWSTemplateFormatVersion: "2010-09-09"
+  Description: This template creates an instance
+
+  Parameters:
+    KeyName:
+      Description: KeyPair
+      Type: AWS::EC2::KeyPair::KeyName
+      ConstraintDescription: instance-ssh-key
+
+  Resources:
+    Ec2Instance:
+      Type: AWS::EC2::Instance
+      Properties:
+        AvailabilityZone: eu-north-1a
+        BlockDeviceMappings:
+          - DeviceName: "/dev/xvda"
+            Ebs:
+              VolumeType: gp2
+              DeleteOnTermination: true
+              VolumeSize: 8
+        IamInstanceProfile: EC2PolicyDip
+        ImageId: ami-0f0b4cb72cf3eadf3
+        InstanceType: t3.micro
+        SubnetId: subnet-0b88e532e7c6be080
+        KeyName: !Ref KeyName
+        SecurityGroupIds:
+          - sg-01d8e6e3fa1aeb3dd
+        Tags:
+          - Key: "Name"
+            Value: "Ec2Instance"
+
+    ASG:
+      Type: AWS::AutoScaling::AutoScalingGroup
+      Properties:
+        AutoScalingGroupName: asg-d
+        MinSize: '0'
+        MaxSize: '1'
+        DesiredCapacity: '1'
+        InstanceId: !Ref Ec2Instance
+        VPCZoneIdentifier:
+          - subnet-0b88e532e7c6be080
+
+  Outputs:
+    PublicIP:
+      Description: EC2 Public IP
+      Value: !GetAtt Ec2Instance.PublicIp
+
+    PublicDnsName:
+      Description: EC2 Public Dns Name
+      Value: !GetAtt Ec2Instance.PublicDnsName

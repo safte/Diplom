@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Upload and delete pictures</title>
+</head>
+<body>
+
+<form action="/upload-multiple-files" enctype="multipart/form-data" method="POST">
+  <p>Upload multiple pictures<br>
+  <input style="margin-top:10px" type="file" name="uploadedPictures" multiple />
+  <input style="margin-top:10px" type="submit" value="Upload files"/>
+</form>
+
+<form action="/upload" enctype="multipart/form-data" method="POST">
+  <p style="margin-top:50px">Upload new picture with username<br>
+  <p><b>Username:</b>
+    <input type="text" name="username" size="20">
+  </p>
+  <input type="file" name="uploadedPicture" />
+  <input type="submit" value="Upload file"/>
+</form>
+
+<form action="/delete" enctype="multipart/form-data" method="POST">
+  <p style="margin-top:50px">Delete all pictures from remote storage<br>
+  <input style="margin-top:10px" type="submit" value="Delete all files"/>
+</form>
+
+
+
+</body>
+</html>

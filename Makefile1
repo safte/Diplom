@@ -1,0 +1,17 @@
+all: lint_py docker_clean
+
+lint_py:
+	pip install flake8
+	flake8 app/app.py
+
+docker_login:
+	echo '$(DOCKERHUB_CREDENTIALS_PSW)' | docker login -u $(DOCKERHUB_CREDENTIALS_USR) --password-stdin
+
+docker_build: docker_login
+	docker build -t dhwe/appy:latest -t dhwe/appy:v1.0 .
+
+docker_push: docker_build
+	docker push --all-tags dhwe/appy
+
+docker_clean: docker_push
+	docker rmi dhwe/appy:latest dhwe/appy:v1.0
