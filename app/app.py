@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template
+from flask import Flask, request, jsonify, abort, make_response
 from werkzeug.exceptions import HTTPException
 import logging
 from logging.handlers import RotatingFileHandler
@@ -16,75 +16,53 @@ ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 
-@app.route('/')
-def upload():
-    """ Upload the main page """
-
-    return render_template('index.html')
-
-
-@app.route('/username')
-def username():
-    """ Upload the page to get profile picture """
-
-    return render_template('username.html')
-
-
-@app.route('/upload', methods=['POST'])
+@app.route('/', methods=['POST', 'GET'])
 def upload_picture():
     """ Upload profile picture to remote storage """
 
-    file = request.files['uploadedPicture']
-    username = request.form['username']
-
-    if not file:
-        app.logger.error('File is not uploaded')
-
-        return 'File is not uploaded', 404
-
-    if not username:
+    if 'name' not in request.form:
         app.logger.error('Username field is empty')
 
-        return 'Username field is empty', 404
+        abort(make_response(jsonify(error='Username field is empty'), 404))
 
-    name = file.filename
+    username = request.form['name']
 
-    if allowed_file(name):
-        s3.Bucket(os.environ['BUCKET_NAME']).put_object(Key=username +
-                                                        extension(name),
-                                                        Body=file)
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            app.logger.error('File is not uploaded')
 
-        return render_template('username.html')
-    else:
-        app.logger.error('Unsupported file extension')
+            abort(make_response(jsonify(error='File is not uploaded'), 404))
 
-        return 'Unsupported file extension', 404
+        file = request.files['file']
+        fname = request.files['file'].filename
 
+        if allowed_file(fname):
+            s3.Bucket(os.environ['BUCKET_NAME']).put_object(Key=username +
+                                                            extension(fname),
+                                                            Body=file)
 
-@app.route('/username', methods=['POST'])
-def get_picture():
-    """ Get profile picture from remote storage by username """
+            return jsonify(file=username + extension(fname), status=200)
+        else:
+            app.logger.error('Unsupported extension')
 
-    username = request.form['username']
+            abort(make_response(jsonify(error='Unsupported extension'), 404))
 
-    if username:
+    if request.method == 'GET':
+
         for bucket_obj in s3.Bucket(os.environ['BUCKET_NAME']).objects.all():
             if bucket_obj.key.startswith(username):
                 s3_object = s3.Object(os.environ['BUCKET_NAME'],
                                       bucket_obj.key)
                 s3_object.download_file(UPLOAD_FOLDER + bucket_obj.key)
 
-        return render_template('index.html')
-    else:
-
-        return 'Username field is empty', 404
+        return jsonify(file=bucket_obj.key, status=200)
 
 
 @app.route('/upload-multiple-files', methods=['POST'])
 def upload_pictures():
     """ Upload profile pictures to remote storage """
 
-    files = request.files.getlist("uploadedPictures")
+    files = request.files.getlist("file")
     for file in files:
         if allowed_file(file.filename):
             s3.Bucket(os.environ['BUCKET_NAME']).put_object(Key=file.filename,
@@ -92,18 +70,25 @@ def upload_pictures():
         else:
             app.logger.error('Unsupported file extension')
 
-            return 'Unsupported file extension', 404
+            abort(make_response(jsonify(error='Unsupported extension'), 404))
 
-    return render_template('username.html')
+    return jsonify(type(files), status=200)
 
 
 @app.route('/delete', methods=['POST'])
 def delete_pictures():
     """ Delete profile pictures from remote storage """
 
-    s3.Bucket(os.environ['BUCKET_NAME']).objects.delete()
+    if 'name' not in request.form:
+        s3.Bucket(os.environ['BUCKET_NAME']).objects.delete()
 
-    return render_template('index.html')
+    else:
+        username = request.form['name']
+        for bucket_obj in s3.Bucket(os.environ['BUCKET_NAME']).objects.all():
+            if bucket_obj.key.startswith(username):
+                s3.Object(os.environ['BUCKET_NAME'], bucket_obj.key).delete()
+
+    return jsonify(status='Pictures deleted')
 
 
 @app.errorhandler(404)

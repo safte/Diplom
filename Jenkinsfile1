@@ -3,19 +3,23 @@ pipeline {
     options {
     buildDiscarder(logRotator(numToKeepStr: '5'))
     }
-    environment {
-      DOCKERHUB_CREDENTIALS = credentials('dockerhub')
-    }
     stages {
-        stage('Run Makefile') {
+        stage('Build images') {
             steps {
-                sh 'make -f Makefile1'
+                sh 'make build'
+            }
+        }
+        stage('Push images to Dockerhub') {
+            steps {
+              withDockerRegistry([ credentialsId: "dockerhub", url: "https://hub.docker.com/repository/docker/dhwe/appy" ]) {
+                sh 'make push'
+              }
+            }
+        }
+        stage('Clean') {
+            steps {
+                sh 'make clean'
             }
         }
     }
-    post {
-      always {
-        sh 'docker logout'
-      }
-  }
 }
