@@ -77,7 +77,7 @@
       Properties:
         VpcId: !Ref VPC
         AvailabilityZone: "eu-north-1b"
-        CidrBlock: !Ref SubnetBCIDRBlock 
+        CidrBlock: !Ref SubnetBCIDRBlock
         MapPublicIpOnLaunch: true
         Tags:
           - Key: Name
@@ -180,7 +180,7 @@
             ToPort: 22
             CidrIp: 0.0.0.0/0
         SecurityGroupEgress:
-          - IpProtocol: -1 
+          - IpProtocol: -1
             CidrIp: 0.0.0.0/0
 
     LaunchConfiguration:
@@ -204,7 +204,9 @@
         UserData:
           Fn::Base64: !Sub |
              #!/bin/bash
-             touch myfile.txt
+             yum install docker
+             docker pull dhwe/appy:latest
+             docker run -d -p 5000:5000 dhwe/appy:latest
              touch ${CommitID}.txt
 
     EC2Role:
@@ -304,4 +306,3 @@
     VPC:
       Description: VPC CIDR block
       Value: !GetAtt VPC.CidrBlock
-

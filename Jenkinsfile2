@@ -7,13 +7,8 @@ pipeline {
         stage('Pull image from Dockerhub') {
             steps {
               withDockerRegistry([ credentialsId: "dockerhub", url: "https://hub.docker.com/repository/docker/dhwe/appy" ]) {
-                sh 'make pull'
+                sh 'make run_instance'
               }
-            }
-        }
-        stage('Run image') {
-            steps {
-                sh 'make run'
             }
         }
     }
