@@ -1,0 +1,24 @@
+pipeline {
+  agent any
+  options {
+    buildDiscarder(logRotator(numToKeepStr: '1'))
+  }
+  environment {
+    AWS_DEFAULT_REGION='eu-west-1'
+  }
+  parameters {
+    string(name: 'STACK_NAME', defaultValue: '')
+    string(name: 'VPC_CIDR_BLOCK', defaultValue: '')
+    string(name: 'SUBNET_A_CIDR_BLOCK', defaultValue: '')
+    string(name: 'SUBNET_B_CIDR_BLOCK', defaultValue: '')
+  }
+  stages {
+    stage('Update stack') {
+      steps {
+        withCredentials([aws(credentialsId: 'aws-jenkins', accessKeyVariable: 'AWS_ACCESS_KEY_ID', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+          sh 'make update_stack'
+        }
+      }
+    }
+  }
+}

@@ -1,6 +1,7 @@
+
 ---
   AWSTemplateFormatVersion: "2010-09-09"
-  Description: This template creates an instance
+  Description: This template creates VPC, Auto Scaling Group, Load Balancer
 
   Parameters:
     CommitID:
@@ -10,24 +11,20 @@
     VPCCIDRBlock:
       Description: The IP range for the VPC
       Type: String
-      Default: 10.0.0.0/16
 
     SubnetACIDRBlock:
       Description: The IP range for the Subnet
       Type: String
-      Default: 10.0.10.0/24
 
     SubnetBCIDRBlock:
       Description: The IP range for the Subnet
       Type: String
-      Default: 10.0.20.0/24
 
   Resources:
     S3Bucket:
-      Type: 'AWS::S3::Bucket'
-      DeletionPolicy: Delete
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
       Properties:
-        BucketName: users-profile-pictures
         PublicAccessBlockConfiguration:
           BlockPublicAcls: true
           IgnorePublicAcls: true
@@ -38,19 +35,9 @@
         CidrBlock: !Ref VPCCIDRBlock
         EnableDnsSupport: true
         EnableDnsHostnames: true
-        Tags:
-        - Key: Name
-          Value: VPC
 
     InternetGateway:
       Type: AWS::EC2::InternetGateway
-      Properties:
-        Tags:
-          - Key: Name
-            Value: !Join
-              - '-'
-              - - !Ref VPC
-                - 'ig'
 
     InternetGatewayAttachment:
       Type: AWS::EC2::VPCGatewayAttachment
@@ -62,40 +49,22 @@
       Type: AWS::EC2::Subnet
       Properties:
         VpcId: !Ref VPC
-        AvailabilityZone: "eu-north-1a"
+        AvailabilityZone: "eu-west-1a"
         CidrBlock: !Ref SubnetACIDRBlock
         MapPublicIpOnLaunch: true
-        Tags:
-          - Key: Name
-            Value: !Join
-              - ''
-              - - !Ref VPC
-                - 'public-subnet-a'
 
     PublicSubnetB:
       Type: AWS::EC2::Subnet
       Properties:
         VpcId: !Ref VPC
-        AvailabilityZone: "eu-north-1b"
+        AvailabilityZone: "eu-west-1b"
         CidrBlock: !Ref SubnetBCIDRBlock
         MapPublicIpOnLaunch: true
-        Tags:
-          - Key: Name
-            Value: !Join
-              - ''
-              - - !Ref VPC
-                - 'public-subnet-b'
 
     RouteTable:
       Type: AWS::EC2::RouteTable
       Properties:
         VpcId: !Ref VPC
-        Tags:
-          - Key: Name
-            Value: !Join
-              - '-'
-              - - !Ref VPC
-                - 'route-table'
 
     Route:
       Type: AWS::EC2::Route
@@ -121,12 +90,6 @@
       Type: AWS::EC2::NetworkAcl
       Properties:
         VpcId: !Ref VPC
-        Tags:
-          - Key: Name
-            Value: !Join
-              - '-'
-              - - VPC
-                - 'network-acl'
 
     InboundNetworkACLTraffic:
       Type: AWS::EC2::NetworkAclEntry
@@ -168,16 +131,16 @@
     SecurityGroup:
       Type: AWS::EC2::SecurityGroup
       Properties:
-        GroupDescription: Allow ssh to client host
+        GroupDescription: SSH and custom ingress
         VpcId: !Ref VPC
-        GroupName: !Join
-          - '-'
-          - - VPC
-            - 'sg'
         SecurityGroupIngress:
           - IpProtocol: tcp
             FromPort: 22
             ToPort: 22
+            CidrIp: 0.0.0.0/0
+          - IpProtocol: tcp
+            FromPort: 5000
+            ToPort: 5000
             CidrIp: 0.0.0.0/0
         SecurityGroupEgress:
           - IpProtocol: -1
@@ -187,32 +150,30 @@
       Type: AWS::AutoScaling::LaunchConfiguration
       Properties:
         AssociatePublicIpAddress: true
-        ImageId: ami-0f0b4cb72cf3eadf3
+        ImageId: ami-0d1bf5b68307103c2
         SecurityGroups:
           - !Ref SecurityGroup
-        InstanceType: t3.micro
+        InstanceType: t2.micro
         IamInstanceProfile: !Ref InstanceProfile
         BlockDeviceMappings:
           - DeviceName: "/dev/xvda"
             Ebs:
               VolumeType: gp2
               DeleteOnTermination: true
-              VolumeSize: 6
+              VolumeSize: 8
         KeyName: instance-ssh-key
-        LaunchConfigurationName: lc
         InstanceMonitoring: false
         UserData:
           Fn::Base64: !Sub |
              #!/bin/bash
-             yum install docker
-             docker pull dhwe/appy:latest
-             docker run -d -p 5000:5000 dhwe/appy:latest
-             touch ${CommitID}.txt
+             yum install docker -y
+             systemctl start docker
+             docker pull dhwe/appy:${CommitID}
+             docker run -d -p 5000:5000 -e BUCKET=${S3Bucket} dhwe/appy:${CommitID}
 
     EC2Role:
       Type: AWS::IAM::Role
       Properties:
-        RoleName: EC2RoleD
         AssumeRolePolicyDocument:
           Version: '2012-10-17'
           Statement:
@@ -227,7 +188,7 @@
     RolePolicies:
       Type: AWS::IAM::Policy
       Properties:
-        PolicyName: EC2PolicyD
+        PolicyName: AppPolicy
         PolicyDocument:
           Version: '2012-10-17'
           Statement:
@@ -255,7 +216,6 @@
       Type: AWS::ElasticLoadBalancingV2::LoadBalancer
       Properties:
         IpAddressType: ipv4
-        Name: "application-load-balancer"
         Scheme: "internet-facing"
         SecurityGroups:
           - !Ref SecurityGroup
@@ -267,13 +227,12 @@
     TargetGroup:
       Type: AWS::ElasticLoadBalancingV2::TargetGroup
       Properties:
-        Name: Targets
         VpcId: !Ref VPC
         Protocol: HTTP
         Port: 5000
 
     HTTPlistener:
-     Type: "AWS::ElasticLoadBalancingV2::Listener"
+     Type: AWS::ElasticLoadBalancingV2::Listener
      Properties:
        DefaultActions:
          - Type: "forward"
@@ -285,11 +244,12 @@
     ASG:
       Type: AWS::AutoScaling::AutoScalingGroup
       Properties:
-        AutoScalingGroupName: asg
         MinSize: '1'
-        MaxSize: '2'
+        MaxSize: '1'
         DesiredCapacity: '1'
         LaunchConfigurationName: !Ref LaunchConfiguration
+        TerminationPolicies: 
+          - OldestLaunchConfiguration
         VPCZoneIdentifier:
           - !Ref PublicSubnetA
           - !Ref PublicSubnetB
@@ -303,6 +263,6 @@
       Description: Bucket Name
       Value: !Ref S3Bucket
 
-    VPC:
-      Description: VPC CIDR block
-      Value: !GetAtt VPC.CidrBlock
+    LoadBalancerDNS:
+      Description: DNS name of the Load Balancer
+      Value: !GetAtt ALB.DNSName

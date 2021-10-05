@@ -1,0 +1,38 @@
+pipeline {
+  agent any
+  options {
+    buildDiscarder(logRotator(numToKeepStr: '1'))
+  }
+  stages {
+    stage('Build images') {
+      steps {
+        sh 'make build'
+      }
+    }
+    stage('Push images to Dockerhub') {
+      steps {
+        withDockerRegistry([ credentialsId: "dockerhub", url: "" ]) {
+          sh 'make push'
+        }
+      }
+    }
+    stage('Clean') {
+      steps {
+        sh 'make clean'
+      }
+    }
+    stage('Trigger Deploy Pipeline') {
+      steps {
+        script {
+          build job: 'Deploy_Pipeline',
+          parameters: [
+            [$class: 'StringParameterValue', name: 'STACK_NAME', value: "application"],
+            [$class: 'StringParameterValue', name: 'VPC_CIDR_BLOCK', value: "10.0.0.0/16"],
+            [$class: 'StringParameterValue', name: 'SUBNET_A_CIDR_BLOCK', value: "10.0.10.0/24"],
+            [$class: 'StringParameterValue', name: 'SUBNET_B_CIDR_BLOCK', value: "10.0.20.0/24"]
+          ]
+        }
+      }
+    }
+  }
+}

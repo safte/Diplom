@@ -1,149 +1,124 @@
-from flask import Flask, request, jsonify, abort, make_response
-from werkzeug.exceptions import HTTPException
+from flask import Flask, request, jsonify, abort, make_response, Response
 import logging
 from logging.handlers import RotatingFileHandler
 import boto3
 import os
 
-
 app = Flask(__name__)
 
 s3 = boto3.resource('s3')
 
-UPLOAD_FOLDER = 'profile_pictures/'
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+@app.route('/', methods=['POST', 'GET', 'DELETE'])
+def process_picture():
+    """ Upload, download and delete profile picture from remote storage """
 
-@app.route('/', methods=['POST', 'GET'])
-def upload_picture():
-    """ Upload profile picture to remote storage """
-
-    if 'name' not in request.form:
-        app.logger.error('Username field is empty')
-
-        abort(make_response(jsonify(error='Username field is empty'), 404))
-
-    username = request.form['name']
-
+    # Upload picture to remote storage
     if request.method == 'POST':
-        if 'file' not in request.files:
-            app.logger.error('File is not uploaded')
+        if bucket_exists(s3.Bucket(os.environ['BUCKET'])):
+            files = request.files.getlist('file')
+            if len(files) > 0:
+                for file in files:
+                    fname = file.filename
 
-            abort(make_response(jsonify(error='File is not uploaded'), 404))
+                    if allowed_file(fname):
+                        s3.Bucket(os.environ['BUCKET']).put_object(Key=fname,
+                                                                   Body=file)
+                    else:
+                        return jsonify(status='Unsupported file extension')
 
-        file = request.files['file']
-        fname = request.files['file'].filename
-
-        if allowed_file(fname):
-            s3.Bucket(os.environ['BUCKET_NAME']).put_object(Key=username +
-                                                            extension(fname),
-                                                            Body=file)
-
-            return jsonify(file=username + extension(fname), status=200)
+                return jsonify(status='Uploaded')
+            return jsonify(status='No username entered')
         else:
-            app.logger.error('Unsupported extension')
+            bad_response('The bucket does not exist', 404)
 
-            abort(make_response(jsonify(error='Unsupported extension'), 404))
-
+    # Download picture from remote storage
     if request.method == 'GET':
+        if bucket_exists(s3.Bucket(os.environ['BUCKET'])):
+            name = request.form.get('name')
 
-        for bucket_obj in s3.Bucket(os.environ['BUCKET_NAME']).objects.all():
-            if bucket_obj.key.startswith(username):
-                s3_object = s3.Object(os.environ['BUCKET_NAME'],
-                                      bucket_obj.key)
-                s3_object.download_file(UPLOAD_FOLDER + bucket_obj.key)
+            if name is not None:
+                for object in s3.Bucket(os.environ['BUCKET']).objects.all():
+                    if object.key.startswith(name):
+                        s3_object = s3.Object(os.environ['BUCKET'], object.key)
 
-        return jsonify(file=bucket_obj.key, status=200)
-
-
-@app.route('/upload-multiple-files', methods=['POST'])
-def upload_pictures():
-    """ Upload profile pictures to remote storage """
-
-    files = request.files.getlist("file")
-    for file in files:
-        if allowed_file(file.filename):
-            s3.Bucket(os.environ['BUCKET_NAME']).put_object(Key=file.filename,
-                                                            Body=file)
+                        return Response(s3_object.get()['Body'].read())
         else:
-            app.logger.error('Unsupported file extension')
+            bad_response('The bucket does not exist', 404)
 
-            abort(make_response(jsonify(error='Unsupported extension'), 404))
+    # Delete picture from remote storage
+    if request.method == 'DELETE':
+        if bucket_exists(s3.Bucket(os.environ['BUCKET'])):
+            name = request.form.get('name')
 
-    return jsonify(type(files), status=200)
+            if name is not None:
+                for object in s3.Bucket(os.environ['BUCKET']).objects.all():
+                    if object.key.startswith(name):
+                        s3.Object(os.environ['BUCKET'], object.key).delete()
+
+                        return jsonify(status=object.key + ' deleted')
+
+                return jsonify(status='No such user')
+            return jsonify(status='No username entered')
+        else:
+            bad_response('The bucket does not exist', 404)
+
+    return make_response('200')
 
 
-@app.route('/delete', methods=['POST'])
+@app.route('/delete-all-pictures', methods=['DELETE'])
 def delete_pictures():
-    """ Delete profile pictures from remote storage """
+    """ Delete all profile pictures from remote storage """
 
-    if 'name' not in request.form:
-        s3.Bucket(os.environ['BUCKET_NAME']).objects.delete()
+    if bucket_exists(s3.Bucket(os.environ['BUCKET'])):
+        s3.Bucket(os.environ['BUCKET']).objects.delete()
 
+        return jsonify(status='Pictures deleted')
     else:
-        username = request.form['name']
-        for bucket_obj in s3.Bucket(os.environ['BUCKET_NAME']).objects.all():
-            if bucket_obj.key.startswith(username):
-                s3.Object(os.environ['BUCKET_NAME'], bucket_obj.key).delete()
-
-    return jsonify(status='Pictures deleted')
-
-
-@app.errorhandler(404)
-def not_found_error(error):
-    """ Error 404 """
-
-    app.logger.error(error)
-
-    return error
-
-
-@app.errorhandler(500)
-def internal_error(error):
-    """ Error 500 """
-
-    app.logger.error(error)
-
-    return error
+        bad_response('The bucket does not exist', 404)
 
 
 @app.errorhandler(Exception)
 def exception_handler(error):
-    """ All Errors """
+    """ Any Errors """
 
-    if isinstance(error, HTTPException):
-        app.logger.error(error)
+    app.logger.error(error)
 
-        return error
-
-    app.logger.error('Something wrong')
-
-    return 'Something wrong'
+    return jsonify(error='Something wrong')
 
 
-def allowed_file(filename: str) -> str:
+def bucket_exists(bucket: str):
+    """ Check if S3 Bucket exists """
+
+    if bucket.creation_date is None:
+        return False
+    else:
+        return True
+
+
+def bad_response(message: str, code: int):
+    """ Handle errors """
+
+    app.logger.error(message)
+
+    abort(make_response(jsonify(error=message), code))
+
+
+def allowed_file(filename: str):
     """ Check if file extension is supported """
 
     return '.' in filename and \
            filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
 
-def extension(filename: str) -> str:
-    """ Get extension of uploaded file """
-
-    extension = '.' + filename.rsplit('.')[-1]
-
-    return extension
-
-
 if __name__ == '__main__':
-    handler = RotatingFileHandler('error.log', mode='a')
+    handler = RotatingFileHandler('/var/log/pp.log', mode='a')
 
     formatter = logging.Formatter('%(asctime)s - %(message)s')
     handler.setFormatter(formatter)
 
     app.logger.addHandler(handler)
 
-    app.run(debug=True, host='0.0.0.0')  #
+    app.run(host='0.0.0.0')
