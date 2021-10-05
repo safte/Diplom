@@ -17,7 +17,7 @@ curl -s -X POST -F "file=@<path/to/image1>" -F "file=@<path/to/image2>" <Load-Ba
 
 If everything is ok you will receive the message **Uploaded**.
 
-## Downloading picture 
+## Downloading picture
 
 To download picture use:
 ```
