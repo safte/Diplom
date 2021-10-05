@@ -24,7 +24,7 @@ pipeline {
     stage('Trigger Deploy Pipeline') {
       steps {
         script {
-          build job: 'Deploy_Pipeline',
+          build job: 'Deploy',
           parameters: [
             [$class: 'StringParameterValue', name: 'STACK_NAME', value: "application"],
             [$class: 'StringParameterValue', name: 'VPC_CIDR_BLOCK', value: "10.0.0.0/16"],
